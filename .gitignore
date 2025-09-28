@@ -1,7 +1,8 @@
-venv/
+
 __pycache__/
 *.pyc
 .env
-file1.py
-file2.py
-sulifa.py
+python
+venv
+java
+humans.db
