@@ -1,15 +1,88 @@
-from fastapi import FastAPI
+from typing_extensions import Annotated
 
-app = FastAPI()
+from fastapi import FastAPI, Depends
+from pydantic import BaseModel
 
-@app.get("/")
-def root():
-    return "Hello World"
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped 
+from sqlalchemy import select
 
-@app.get("/ping")
-def ping():
-    return {"message": "pong"}
+app =FastAPI()
 
-@app.get("/sum")
-def sum_numbers(a: int, b: int):
-    return {"result": a + b}
+engine = create_async_engine('sqlite+aiosqlite:///humans.db')
+
+new_session = async_sessionmaker(engine, expire_on_commit=False)
+
+async def get_session():
+    async with new_session() as session:
+        yield session
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+class Base(DeclarativeBase):
+    pass
+
+class HumanModel(Base):
+    __tablename__ = "humans"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    age: Mapped[int]
+    gender: Mapped[str]
+
+@app.post("/setup_db")
+async def setup_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    return {"status:": "ok"}
+
+
+class HumanAddSchema(BaseModel):
+    name: str
+    age: int
+    gender: str
+
+class HumanSchema(HumanAddSchema):
+    id: int
+
+@app.post("/humans")
+async def add_human(data: HumanAddSchema, session: SessionDep):
+    new_human = HumanModel(
+        name = data.name,
+        age = data.age,
+        gender = data.gender
+    )
+    session.add(new_human)
+    await session.commit()
+    return {"status": "human added"}
+
+@app.get("/humans")
+async def list_humans(session: SessionDep):
+    query =  select(HumanModel)
+    result = await session.execute(query)
+    return result.scalars().all()
+
+@app.put("/humans")
+async def update_human(data: HumanSchema, session: SessionDep):
+    query = select(HumanModel).where(HumanModel.id == data.id)
+    result = await session.execute(query)
+    human = result.scalar_one_or_none()
+    if human is None:
+        return {"error": "human not found"}
+    human.name = data.name
+    human.age = data.age
+    human.gender = data.gender
+    await session.commit()
+    return {"status": "human updated"}
+
+@app.delete("/humans")
+async def list_humans(human_id : int, session: SessionDep):
+    query = select(HumanModel).where(HumanModel.id == human_id)
+    result = await session.execute(query)
+    human = result.scalar_one_or_none()
+    if human is None:
+        return {"error": "human not found"}
+    await session.delete(human)
+    await session.commit()
+    return {"status": "human deleted"}
