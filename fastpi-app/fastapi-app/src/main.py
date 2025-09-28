@@ -1,23 +1,17 @@
-from typing_extensions import Annotated
-
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from pydantic import BaseModel
-
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped 
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
 from sqlalchemy import select
 
-app =FastAPI()
+app = FastAPI()
 
 engine = create_async_engine('sqlite+aiosqlite:///humans.db')
-
 new_session = async_sessionmaker(engine, expire_on_commit=False)
 
 async def get_session():
     async with new_session() as session:
         yield session
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 class Base(DeclarativeBase):
     pass
@@ -35,8 +29,7 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    return {"status:": "ok"}
-
+    return {"status": "ok"}
 
 class HumanAddSchema(BaseModel):
     name: str
@@ -47,24 +40,24 @@ class HumanSchema(HumanAddSchema):
     id: int
 
 @app.post("/humans")
-async def add_human(data: HumanAddSchema, session: SessionDep):
+async def add_human(data: HumanAddSchema, session: AsyncSession = Depends(get_session)):
     new_human = HumanModel(
-        name = data.name,
-        age = data.age,
-        gender = data.gender
+        name=data.name,
+        age=data.age,
+        gender=data.gender
     )
     session.add(new_human)
     await session.commit()
     return {"status": "human added"}
 
 @app.get("/humans")
-async def list_humans(session: SessionDep):
-    query =  select(HumanModel)
+async def list_humans(session: AsyncSession = Depends(get_session)):
+    query = select(HumanModel)
     result = await session.execute(query)
     return result.scalars().all()
 
 @app.put("/humans")
-async def update_human(data: HumanSchema, session: SessionDep):
+async def update_human(data: HumanSchema, session: AsyncSession = Depends(get_session)):
     query = select(HumanModel).where(HumanModel.id == data.id)
     result = await session.execute(query)
     human = result.scalar_one_or_none()
@@ -77,7 +70,7 @@ async def update_human(data: HumanSchema, session: SessionDep):
     return {"status": "human updated"}
 
 @app.delete("/humans")
-async def list_humans(human_id : int, session: SessionDep):
+async def delete_human(human_id: int, session: AsyncSession = Depends(get_session)):
     query = select(HumanModel).where(HumanModel.id == human_id)
     result = await session.execute(query)
     human = result.scalar_one_or_none()

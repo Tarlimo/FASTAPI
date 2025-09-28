@@ -1,0 +1,5 @@
+FastAPI
+SQLAlchemy
+aiosqlite
+pydantic
+typing-extensions
